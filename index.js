@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 5000;
 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
@@ -82,6 +82,11 @@ async function run() {
     // likes collection
 
     const likeCollection =client.db("articleDB").collection("likes")
+    // BookMarked Collection
+    const bookmarkCollection = client.db("articleDB").collection("bookmarks");
+    // Users Collection 
+    const usersCollection = client.db("articleDB").collection("users");
+
 
 
     app.post('/articles',verifyJWT, async (req, res) => {
@@ -219,25 +224,135 @@ async function run() {
       }
     });
 
-    app.get("/likes/:articleId", async(req,res)=>{
-      const articleId = req.params.articleId;
+    app.get("/likes/:articleId", async (req, res) => {
+  const articleId = req.params.articleId;
+  const userEmail = req.query.userEmail;
 
-      try{
+  try {
+    const totalLikes = await likeCollection.countDocuments({ articleId });
+    let userLiked = false;
 
-        const count = await likeCollection.countDocuments({articleId});
+    if (userEmail) {
+      const like = await likeCollection.findOne({ articleId, userEmail });
+      userLiked = !!like;
+    }
 
-        res.send({totalLikes: count });
-      } catch(err){
-        console.error("Error getting like count:", err);
-        res.status(500).send("Failed to get like count");
-      }
-    })
+    res.send({ totalLikes, userLiked });
+  } catch (err) {
+    console.error("Error getting like count:", err);
+    res.status(500).send("Failed to get like count");
+  }
+});
+
     
+    app.delete("/likes", async (req, res) => {
+  const { articleId, userEmail } = req.body;
+  try {
+    const result = await likeCollection.deleteOne({ articleId, userEmail });
+    res.send(result);
+  } catch (err) {
+    res.status(500).send("Failed to unlike article");
+  }
+});
+ // ✅ Add a bookmark
+app.post("/bookmarks", verifyJWT, async (req, res) => {
+  const { articleId } = req.body;
+  const userEmail = req.decoded.email;
 
-   
+  try {
+    // Prevent duplicate bookmarks
+    const alreadyBookmarked = await bookmarkCollection.findOne({ articleId, userEmail });
+    if (alreadyBookmarked) {
+      return res.status(400).send({ message: "Article already bookmarked" });
+    }
 
-    
-    
+    const result = await bookmarkCollection.insertOne({
+      articleId,
+      userEmail,
+      timestamp: new Date(),
+    });
+
+    res.send(result);
+  } catch (err) {
+    console.error("Error adding bookmark:", err);
+    res.status(500).send({ message: "Failed to bookmark article" });
+  }
+});
+
+// ✅ Get all bookmarks for a user
+app.get("/bookmarks", verifyJWT, async (req, res) => {
+  const userEmail = req.decoded.email;
+  try {
+    const bookmarks = await bookmarkCollection.find({ userEmail }).toArray();
+
+    // Optionally, populate article info
+    const articleIds = bookmarks.map(b => new ObjectId(b.articleId));
+    const articles = await articleCollection.find({ _id: { $in: articleIds } }).toArray();
+
+    res.send(articles);
+  } catch (err) {
+    console.error("Error fetching bookmarks:", err);
+    res.status(500).send({ message: "Failed to fetch bookmarks" });
+  }
+});
+
+// ✅ Delete bookmark
+app.delete("/bookmarks/:articleId", verifyJWT, async (req, res) => {
+  const { articleId } = req.params;
+  const userEmail = req.decoded.email;
+
+  try {
+    const result = await bookmarkCollection.deleteOne({ articleId, userEmail });
+    res.send(result);
+  } catch (err) {
+    console.error("Error deleting bookmark:", err);
+    res.status(500).send({ message: "Failed to remove bookmark" });
+  }
+});
+
+// ✅ POST — Save user to DB (register or first login)
+app.post("/users", async (req, res) => {
+  const user = req.body;
+  if (!user?.email) return res.status(400).send({ message: "Email required" });
+
+  const existingUser = await usersCollection.findOne({ email: user.email });
+  if (existingUser) {
+    return res.send({ message: "User already exists", insertedId: null });
+  }
+
+  const result = await usersCollection.insertOne(user);
+  res.send(result);
+});
+
+// ✅ GET — Get all users
+app.get("/users", async (req, res) => {
+  const users = await usersCollection.find().toArray();
+  res.send(users);
+});
+
+// ✅ GET — Get one user by email
+app.get("/users/:email", async (req, res) => {
+  const email = req.params.email;
+  const user = await usersCollection.findOne({ email });
+  res.send(user);
+});
+
+// ✅ PATCH — Update user role (e.g., make admin)
+app.patch("/users/:id", async (req, res) => {
+  const id = req.params.id;
+  const updateDoc = { $set: req.body };
+  const result = await usersCollection.updateOne({ _id: new ObjectId(id) }, updateDoc);
+  res.send(result);
+});
+
+// ✅ DELETE — Remove user
+app.delete("/users/:id", async (req, res) => {
+  const id = req.params.id;
+  const result = await usersCollection.deleteOne({ _id: new ObjectId(id) });
+  res.send(result);
+});
+
+
 
     // Send a ping to confirm a successful connection
     // await client.db("admin").command({ ping: 1 });
