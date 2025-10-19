@@ -86,7 +86,8 @@ async function run() {
     const bookmarkCollection = client.db("articleDB").collection("bookmarks");
     // Users Collection 
     const usersCollection = client.db("articleDB").collection("users");
-
+    // Quizz collection
+    const quizCollection = client.db("articleDB").collection("quizzes");
 
 
     app.post('/articles',verifyJWT, async (req, res) => {
@@ -350,6 +351,40 @@ app.delete("/users/:id", async (req, res) => {
   const id = req.params.id;
   const result = await usersCollection.deleteOne({ _id: new ObjectId(id) });
   res.send(result);
+});
+  // ✅ Create Quiz
+app.post("/quizzes", async (req, res) => {
+  try {
+    const quiz = req.body;
+    const result = await quizCollection.insertOne(quiz);
+    res.send(result);
+  } catch (err) {
+    console.error("Error adding quiz:", err);
+    res.status(500).send("Failed to add quiz");
+  }
+});
+
+// ✅ Get All Quizzes
+app.get("/quizzes", async (req, res) => {
+  try {
+    const result = await quizCollection.find().toArray();
+    res.send(result);
+  } catch (err) {
+    console.error("Error fetching quizzes:", err);
+    res.status(500).send("Failed to fetch quizzes");
+  }
+});
+
+// ✅ Get Single Quiz by ID
+app.get("/quizzes/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const quiz = await quizCollection.findOne({ _id: new ObjectId(id) });
+    res.send(quiz);
+  } catch (err) {
+    console.error("Error fetching quiz:", err);
+    res.status(500).send("Failed to fetch quiz");
+  }
 });
 
 
