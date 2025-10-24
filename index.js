@@ -88,7 +88,13 @@ async function run() {
     const usersCollection = client.db("articleDB").collection("users");
     // Quizz collection
     const quizCollection = client.db("articleDB").collection("quizzes");
+    // notification Collection
+    const notificationCollection = client.db("articleDB").collection("notifications");
 
+  // ActivityLog Collection
+  const activityCollection = client.db("articleDB").collection("activities");
+
+    
 
     app.post('/articles',verifyJWT, async (req, res) => {
       const article = req.body;
@@ -143,19 +149,23 @@ async function run() {
 
     // update Article
 
-    app.put('/articles/:id',async (req,res)=>{
-      const id = req.params.id;
-      const updated = req.body;
-      const result = await articleCollection.updateOne(
-        {
-          _id:new ObjectId(id)
-        },
-        {
-          $set:updated
-        }
-      );
-      res.send(result);
-    });
+    app.put("/articles/:id", async (req, res) => {
+  const id = req.params.id;
+  const email = req.user.email; // from JWT token
+  const article = await articlesCollection.findOne({ _id: new ObjectId(id) });
+
+  if (article.authorEmail !== email) {
+    return res.status(403).send({ message: "Unauthorized to update this article!" });
+  }
+
+  const updatedData = req.body;
+  await articlesCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: updatedData }
+  );
+
+  res.send({ message: "Article updated successfully!" });
+});
 
      // Delete Article
 
@@ -386,6 +396,88 @@ app.get("/quizzes/:id", async (req, res) => {
     res.status(500).send("Failed to fetch quiz");
   }
 });
+
+    // 🔔 Create Notification (e.g., comment, like, featured)
+  app.post("/notifications", async (req, res) => {
+    try {
+      const { recipientEmail, senderEmail, type, message, articleId } = req.body;
+      const result = await notificationCollection.insertOne({
+        recipientEmail,
+        senderEmail,
+        type,
+        message,
+        articleId,
+        isRead: false,
+        timestamp: new Date(),
+      });
+      res.send(result);
+    } catch (err) {
+      console.error("Error creating notification:", err);
+      res.status(500).send("Failed to create notification");
+    }
+  });
+
+  // 🔔 Get user notifications
+  app.get("/notifications/:email", async (req, res) => {
+    try {
+      const email = req.params.email;
+      const notifications = await notificationCollection
+        .find({ recipientEmail: email })
+        .sort({ timestamp: -1 })
+        .toArray();
+      res.send(notifications);
+    } catch (err) {
+      console.error("Error fetching notifications:", err);
+      res.status(500).send("Failed to fetch notifications");
+    }
+  });
+
+  // ✅ Mark notification as read
+  app.patch("/notifications/read/:id", async (req, res) => {
+    try {
+      const id = req.params.id;
+      const result = await notificationCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { isRead: true } }
+      );
+      res.send(result);
+    } catch (err) {
+      res.status(500).send("Failed to mark notification as read");
+    }
+  });
+
+  // 📜 Add activity log (any action)
+  app.post("/activities", async (req, res) => {
+    try {
+      const { userEmail, action, articleId } = req.body;
+      const result = await activityCollection.insertOne({
+        userEmail,
+        action,
+        articleId,
+        timestamp: new Date(),
+      });
+      res.send(result);
+    } catch (err) {
+      console.error("Error adding activity:", err);
+      res.status(500).send("Failed to add activity");
+    }
+  });
+
+  // 📜 Get activity logs for a user
+  app.get("/activities/:email", async (req, res) => {
+    try {
+      const email = req.params.email;
+      const logs = await activityCollection
+        .find({ userEmail: email })
+        .sort({ timestamp: -1 })
+        .toArray();
+      res.send(logs);
+    } catch (err) {
+      console.error("Error fetching activities:", err);
+      res.status(500).send("Failed to fetch activities");
+    }
+  });
+  
 
 
 
